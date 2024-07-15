@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>assignment</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: white;
+        }
+
+        canvas {
+            display: block;
+        }
+
+        #ui {
+            position: absolute;
+            bottom: 10px;
+            left: 50%;
+            transform: translateX(-50%);
+            display: flex;
+            gap: 10px;
+        }
+
+        button {
+            padding: 10px;
+            font-size: 16px;
+        }
+    </style>
+</head>
+
+<body>
+    <div id="ui">
+        <button id="completeButton">Complete</button>
+        <button id="copyButton">Copy</button>
+        <button id="resetButton">Reset</button>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    <script>
+        const scene = new THREE.Scene();
+        const camera = new THREE.OrthographicCamera(window.innerWidth / -2, window.innerWidth / 2, window.innerHeight / 2, window.innerHeight / -2, 1, 1000);
+        const renderer = new THREE.WebGLRenderer();
+        renderer.setSize(window.innerWidth, window.innerHeight);
+        renderer.setClearColor(0xffffff);
+        document.body.appendChild(renderer.domElement);
+
+        camera.position.z = 5;
+
+        const grid = new THREE.GridHelper(window.innerWidth, 40, 0xd3d3d3, 0xd3d3d3);
+        grid.rotation.x = Math.PI / 2;
+        scene.add(grid);
+
+        let points = [];
+        let currentPolygon = null;
+        let isDrawingPolygon = true;
+        let polygonCopy = null;
+        let isResetting = false;
+
+        const raycaster = new THREE.Raycaster();
+        const mouse = new THREE.Vector2();
+
+        window.addEventListener('mousemove', (event) => {
+            if (polygonCopy) {
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObject(grid);
+                if (intersects.length > 0) {
+                    const point = intersects[0].point;
+                    polygonCopy.position.copy(point);
+                }
+            }
+        });
+
+        window.addEventListener('mousedown', (event) => {
+            if (event.button === 0 && polygonCopy) {
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObject(grid);
+                if (intersects.length > 0) {
+                    const point = intersects[0].point;
+                    polygonCopy.position.copy(point);
+                    polygonCopy = null;
+                }
+            }
+        });
+
+        window.addEventListener('click', (event) => {
+            if (!isResetting && isDrawingPolygon) {
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+                const vector = new THREE.Vector3(mouse.x, mouse.y, 0.5);
+                vector.unproject(camera);
+                vector.z = 0;
+                points.push(vector);
+
+                updatePolygon();
+            } else if (polygonCopy) {
+                const rect = renderer.domElement.getBoundingClientRect();
+                mouse.x = ((event.clientX - rect.left) / rect.width) * 2 - 1;
+                mouse.y = -((event.clientY - rect.top) / rect.height) * 2 + 1;
+
+                raycaster.setFromCamera(mouse, camera);
+                const intersects = raycaster.intersectObject(grid);
+                if (intersects.length > 0) {
+                    const point = intersects[0].point;
+                    polygonCopy.position.copy(point);
+                    polygonCopy = null;
+                }
+            }
+        });
+
+        function updatePolygon() {
+            if (currentPolygon) scene.remove(currentPolygon);
+
+            const geometry = new THREE.BufferGeometry().setFromPoints(points);
+            const material = new THREE.LineBasicMaterial({ color: 0xff0000 });
+            currentPolygon = new THREE.LineLoop(geometry, material);
+
+            scene.add(currentPolygon);
+        }
+
+        document.getElementById('completeButton').addEventListener('click', () => {
+            if (points.length > 2) {
+                isDrawingPolygon = false;
+
+                if (currentPolygon) scene.remove(currentPolygon);
+
+                const shape = new THREE.Shape(points.map(v => new THREE.Vector2(v.x, v.y)));
+                const geometry = new THREE.ShapeGeometry(shape);
+                const material = new THREE.MeshBasicMaterial({ color: 0x00ff00, side: THREE.DoubleSide });
+                currentPolygon = new THREE.Mesh(geometry, material);
+
+                scene.add(currentPolygon);
+
+                const edges = new THREE.EdgesGeometry(geometry);
+                const edgesMaterial = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 3 });
+                const edgesMesh = new THREE.LineSegments(edges, edgesMaterial);
+                currentPolygon.add(edgesMesh);
+            }
+        });
+
+        document.getElementById('copyButton').addEventListener('click', () => {
+            if (currentPolygon && !isDrawingPolygon && !polygonCopy) {
+                const geometry = currentPolygon.geometry.clone();
+                const material = currentPolygon.material.clone();
+                material.color.setHex(0xff00ff);
+                polygonCopy = new THREE.Mesh(geometry, material);
+                scene.add(polygonCopy);
+            }
+        });
+
+        function removeAllMeshes() {
+            const meshesToRemove = [];
+            scene.traverse((child) => {
+                if (child.isMesh) {
+                    meshesToRemove.push(child);
+                }
+            });
+            meshesToRemove.forEach((mesh) => {
+                scene.remove(mesh);
+            });
+        }
+
+        document.getElementById('resetButton').addEventListener('click', () => {
+            points = [];
+            isDrawingPolygon = false;
+            removeAllMeshes();
+            currentPolygon = null;
+            polygonCopy = null;
+            isResetting = true;
+
+            setTimeout(() => {
+                isDrawingPolygon = true;
+                isResetting = false;
+            }, 100);
+        });
+
+        function animate() {
+            requestAnimationFrame(animate);
+            renderer.render(scene, camera);
+        }
+        animate();
+    </script>
+</body>
+</html>
